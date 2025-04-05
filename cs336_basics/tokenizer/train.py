@@ -1,11 +1,16 @@
 import regex as re
+import concurrent.futures
+from functools import partial
 from collections import defaultdict, Counter
 
 INITIAL_BYTE_VOCAB_SIZE = 256
 PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+END_OF_TEXT_TOKEN = "<|endoftext|>"
+
 
 def char_to_bytes(s):
     return bytes(s, encoding="utf-8")
+
 
 # def negative_ord_tuple(pair):
 #     first = tuple([-byte for byte in pair[0]])
@@ -18,10 +23,30 @@ def char_to_bytes(s):
 #     second = bytes([-byte for byte in second])
 #     return (first, second)
 
+
+def lookup_pair_counts_and_locations(
+    subwords_and_offset: tuple,
+    subword_freqs: dict,
+):
+    subwords, offset = subwords_and_offset
+    pair_locations = defaultdict(list)
+    pair_counts = Counter()
+
+    for word_idx, word in enumerate(subwords):
+        word_freq = subword_freqs[tuple(word)]
+        for pos in range(len(word) - 1):
+            pair = (word[pos], word[pos + 1])
+            pair_counts[pair] += word_freq
+            pair_locations[pair].append(word_idx + offset)
+
+    return pair_counts, pair_locations
+
+
 def train_bpe(
     input_path: str,
     vocab_size: int,
     special_tokens: list[str],
+    num_workers=1,
 ):
     num_merges = vocab_size - len(special_tokens) - INITIAL_BYTE_VOCAB_SIZE
     vocab = {}
@@ -31,31 +56,47 @@ def train_bpe(
     for i, special_token in enumerate(special_tokens):
         vocab[INITIAL_BYTE_VOCAB_SIZE + i] = bytes(special_token, encoding="utf-8")
 
-    
-    with open(input_path, "r") as f:
+    with open(input_path) as f:
         corpus_text = str(f.read())
+        # documents = corpus_text.split(END_OF_TEXT_TOKEN)
         subword_iter = re.finditer(PAT, corpus_text)
 
     subword_freqs = {}
     # subwords = []
     for subword_match in subword_iter:
         subword_str = subword_match.group()
-        subword  = [char_to_bytes(c) for c in subword_str]
+        subword = [char_to_bytes(c) for c in subword_str]
         subword_byte_tuple = tuple(subword)
         subword_freqs[subword_byte_tuple] = subword_freqs.get(subword_byte_tuple, 0) + 1
         # subwords.append(subword)
 
+    subwords = list(subword_freqs.keys())
 
     pair_locations = defaultdict(list)
     pair_counts = Counter()
 
-    subwords = list(subword_freqs.keys())
-    for word_idx, word in enumerate(subwords):
-        word_freq = subword_freqs[tuple(word)]
-        for pos in range(len(word) - 1):
-            pair = (word[pos], word[pos + 1])
-            pair_counts[pair] += word_freq
-            pair_locations[pair].append(word_idx)
+    # Calculate batch size - divide work evenly among workers
+    batch_size = max(1, len(subwords) // num_workers)
+    batches = [(subwords[i : i + batch_size], i) for i in range(0, len(subwords), batch_size)]
+
+    process_batch = partial(lookup_pair_counts_and_locations, subword_freqs=subword_freqs)
+    with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
+        results = executor.map(process_batch, batches)
+
+        # Combine results from all workers
+        for local_counts, local_locations in results:
+            for pair, locations in local_locations.items():
+                pair_locations[pair].extend(locations)
+                pair_counts[pair] += local_counts[pair]
+
+    # print(pair_counts)
+    # subwords = list(subword_freqs.keys())
+    # for word_idx, word in enumerate(subwords):
+    #     word_freq = subword_freqs[tuple(word)]
+    #     for pos in range(len(word) - 1):
+    #         pair = (word[pos], word[pos + 1])
+    #         pair_counts[pair] += word_freq
+    #         pair_locations[pair].append(word_idx)
 
     # Max heap on counts and lexicographically greater pairs
     # Sort and print pair_counts from largest to smallest count
@@ -66,10 +107,8 @@ def train_bpe(
     # for pair, count in sorted_pairs:
     #     print(f"Pair: {positive_bytes(negative_ord_tuple(pair))}, Count: {count}")
 
-
     # pair_pq = [(-counts, negative_ord_tuple(pair)) for pair, counts in pair_counts.items()]
     # heapq.heapify(pair_pq)
-
 
     merges = []
     for j in range(num_merges):
@@ -97,10 +136,9 @@ def train_bpe(
         #     print(f"Tiebreaking for {pair}")
         #     print(max_pairs)
 
-
         # pair = max(pair_counts, key=pair_counts.get)
         # print(pair_counts[pair], pair)
-        
+
         # count = -neg_count
         # breakpoint()
         # pair = positive_bytes(neg_pair)
@@ -118,7 +156,6 @@ def train_bpe(
 
             # Start from the back because we will pop elements which messes up indices
             for pos in range(len(word) - 1):
-
                 # Since scanning from left to right, we need to continue checking that the indices are correct
                 if pos + 1 >= len(word):
                     continue
@@ -134,6 +171,8 @@ def train_bpe(
                     # if bytes('.', encoding="utf-8") in word:
                     #     print(f"{word}, prev pair: {prev_pair}, word_freq: {word_freq}")
                     pair_counts[prev_pair] -= word_freq
+                    if pair_counts[prev_pair] == 0:
+                        pair_counts.pop(prev_pair)
                     # print(f"Decrementing prev pair {prev_pair} to {pair_counts[prev_pair]} where word freq is {word_freq}")
                     # affected_pairs.add(prev_pair)
 
@@ -142,6 +181,9 @@ def train_bpe(
                     next_word = word[pos + 2]
                     next_pair = (second, next_word)
                     pair_counts[next_pair] -= word_freq
+                    if pair_counts[next_pair] == 0:
+                        pair_counts.pop(next_pair)
+
                     # if bytes('.', encoding="utf-8") in word:
                     #     print(f"{word}, next pair: {next_pair}")
                     # print(f"Decrementing next pair {next_pair} to {pair_counts[next_pair]} where word freq is {word_freq}")
@@ -151,7 +193,7 @@ def train_bpe(
                 # Set word frequency to previous
                 # NOTE(chris): POP when 0?
                 # subword_freqs[tuple(word)] -= word_freq
-                word = word[:pos] + (new_token, ) + word[pos + 2:]
+                word = word[:pos] + (new_token,) + word[pos + 2 :]
 
                 # We need this line because the line before does not change the actual memory in
                 # the subwords array. So, the list would not change the actual word.
@@ -168,7 +210,7 @@ def train_bpe(
                     pair_counts[new_pair] += word_freq
                     pair_locations[new_pair].append(word_idx)
                     # affected_pairs.add(new_pair)
-                
+
                 # Check byte to the right of this pair
                 if pos < len(word) - 1:
                     next_word = word[pos + 1]
