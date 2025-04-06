@@ -1,3 +1,4 @@
+import itertools
 import regex as re
 import concurrent.futures
 from functools import partial
@@ -41,12 +42,29 @@ def lookup_pair_counts_and_locations(
 
     return pair_counts, pair_locations
 
+def build_subword_freq_table(
+    documents: list[str],
+):
+    subword_freqs = {}
+    for document in documents:
+        # Special token used for delimiting endoftext should be removed
+        document = document.replace("<|endoftext|>", "")
+        subword_iter = re.finditer(PAT, document)
+        for subword_match in subword_iter:
+            subword_str = subword_match.group()
+            subword = [char_to_bytes(c) for c in subword_str]
+            subword_byte_tuple = tuple(subword)
+            subword_freqs[subword_byte_tuple] = subword_freqs.get(subword_byte_tuple, 0) + 1
+    
+    return subword_freqs
+
 
 def train_bpe(
     input_path: str,
     vocab_size: int,
     special_tokens: list[str],
     num_workers=1,
+    chunksize=25000,
 ):
     num_merges = vocab_size - len(special_tokens) - INITIAL_BYTE_VOCAB_SIZE
     vocab = {}
@@ -56,21 +74,60 @@ def train_bpe(
     for i, special_token in enumerate(special_tokens):
         vocab[INITIAL_BYTE_VOCAB_SIZE + i] = bytes(special_token, encoding="utf-8")
 
-    with open(input_path) as f:
-        corpus_text = str(f.read())
-        # documents = corpus_text.split(END_OF_TEXT_TOKEN)
-        subword_iter = re.finditer(PAT, corpus_text)
+    # with open(input_path) as f:
+    #     corpus_text = str(f.read())
+    #     documents = corpus_text.split(END_OF_TEXT_TOKEN)
 
-    subword_freqs = {}
-    # subwords = []
-    for subword_match in subword_iter:
-        subword_str = subword_match.group()
-        subword = [char_to_bytes(c) for c in subword_str]
-        subword_byte_tuple = tuple(subword)
-        subword_freqs[subword_byte_tuple] = subword_freqs.get(subword_byte_tuple, 0) + 1
-        # subwords.append(subword)
+    # batch_size = max(1, len(documents) // num_workers)
+    # batches = [documents[i: i + batch_size] for i in range(0, len(documents), batch_size)]
 
-    subwords = list(subword_freqs.keys())
+    subword_freqs = Counter()
+    subwords = set()
+
+    # Memory optimization by doing streaming
+    with open(input_path, 'r') as f:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
+            # Process file in chunks
+            while True:
+                # Read a chunk of lines
+                lines_chunk = list(itertools.islice(f, chunksize))
+                if not lines_chunk:
+                    break
+                    
+                # Divide chunk into smaller batches for workers
+                batch_size = max(1, len(lines_chunk) // num_workers)
+                batches = [lines_chunk[i:i+batch_size] for i in range(0, len(lines_chunk), batch_size)]
+                
+                # Process batches in parallel
+                results = executor.map(build_subword_freq_table, batches)
+                
+                # Combine results
+                for local_subword_freqs in results:
+                    for word, freq in local_subword_freqs.items():
+                        subword_freqs[word] += freq
+                        subwords.add(word)
+
+    # with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
+    #     results = executor.map(build_subword_freq_table, batches)
+
+    #     for local_subword_freqs in results:
+    #         for word, freq in local_subword_freqs.items():
+    #             subword_freqs[word] += freq
+    #             subwords.add(word)
+    
+    subwords = list(subwords)
+
+    
+    # subword_iter = re.finditer(PAT, corpus_text)
+
+    # subword_freqs = {}
+    # for subword_match in subword_iter:
+    #     subword_str = subword_match.group()
+    #     subword = [char_to_bytes(c) for c in subword_str]
+    #     subword_byte_tuple = tuple(subword)
+    #     subword_freqs[subword_byte_tuple] = subword_freqs.get(subword_byte_tuple, 0) + 1
+
+    # subwords = list(subword_freqs.keys())
 
     pair_locations = defaultdict(list)
     pair_counts = Counter()
