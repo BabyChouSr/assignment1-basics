@@ -1,4 +1,5 @@
 import argparse
+import base64
 import json
 from cs336_basics.tokenizer.train import train_bpe
 
@@ -22,7 +23,9 @@ if __name__ == "__main__":
     vocab, merges = train_bpe(f"data/{dataset_name}.txt", args.vocab_size, ["<|endoftext|>"], num_workers=DEFAULT_NUM_WORKERS, chunksize=DEFAULT_CHUNKSIZE)
 
     # Convert bytes objects to strings for JSON serialization
-    serializable_vocab = {k: v.decode("utf-8", errors="replace") for k, v in vocab.items()}
+    # WE use latin-1 because it maps the bytes byte to byte instead of utf-8 which
+    # fails for certain bytes that require multiple bytes such as continuation bytes
+    serializable_vocab = {k: v.decode('latin-1') for k, v in vocab.items()}
 
     with open(f"results/{args.dataset}-{args.split}-vocab.json", "w") as f:
         json.dump(serializable_vocab, f, indent=2)
@@ -30,8 +33,8 @@ if __name__ == "__main__":
     # Format merges for writing to file
     formatted_merges = []
     for first, second in merges:
-        first_str = first.decode('utf-8', errors='replace')
-        second_str = second.decode('utf-8', errors='replace')
+        first_str = first.decode('latin-1')
+        second_str = second.decode('latin-1')
         formatted_merges.append(f"({first_str},{second_str})")
 
     with open(f"results/{dataset_name}-merges.txt", "w") as f:

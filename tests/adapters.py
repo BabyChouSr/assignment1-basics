@@ -10,6 +10,10 @@ import torch
 from torch import Tensor
 
 from cs336_basics.tokenizer.train import train_bpe
+from cs336_basics.layers.linear import Linear
+from cs336_basics.layers.embedding import Embedding
+from cs336_basics.layers.layernorm import RMSNorm
+from cs336_basics.tokenizer.tokenizer import Tokenizer
 
 
 def run_linear(
@@ -31,7 +35,9 @@ def run_linear(
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
 
-    raise NotImplementedError
+    linear = Linear(d_in, d_out)
+    linear.W.data = weights
+    return linear(in_features)
 
 
 def run_embedding(
@@ -53,7 +59,9 @@ def run_embedding(
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
 
-    raise NotImplementedError
+    embedding = Embedding(vocab_size, d_model)
+    embedding.embeddings.data = weights
+    return embedding(token_ids)
 
 
 def run_swiglu(
@@ -380,7 +388,9 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
-    raise NotImplementedError
+    rmsnorm = RMSNorm(d_model, eps)
+    rmsnorm.gain.data = weights
+    return rmsnorm(in_features)
 
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
@@ -561,7 +571,7 @@ def get_tokenizer(
     Returns:
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
-    raise NotImplementedError
+    return Tokenizer(vocab, merges, special_tokens)
 
 
 def run_train_bpe(

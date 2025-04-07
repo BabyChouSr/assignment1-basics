@@ -12,6 +12,8 @@ END_OF_TEXT_TOKEN = "<|endoftext|>"
 def char_to_bytes(s):
     return bytes(s, encoding="utf-8")
 
+def str_to_byte_list(s):
+    return [bytes([b]) for b in s.encode("utf-8")]
 
 # def negative_ord_tuple(pair):
 #     first = tuple([-byte for byte in pair[0]])
@@ -52,7 +54,8 @@ def build_subword_freq_table(
         subword_iter = re.finditer(PAT, document)
         for subword_match in subword_iter:
             subword_str = subword_match.group()
-            subword = [char_to_bytes(c) for c in subword_str]
+            # subword = [char_to_bytes(c) for c in subword_str]
+            subword = str_to_byte_list(subword_str)
             subword_byte_tuple = tuple(subword)
             subword_freqs[subword_byte_tuple] = subword_freqs.get(subword_byte_tuple, 0) + 1
     
