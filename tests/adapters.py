@@ -13,6 +13,8 @@ from cs336_basics.tokenizer.train import train_bpe
 from cs336_basics.layers.linear import Linear
 from cs336_basics.layers.embedding import Embedding
 from cs336_basics.layers.layernorm import RMSNorm
+from cs336_basics.layers.activations import Silu, SwiGLU
+from cs336_basics.layers.rotary_embedding import RotaryPositionEmbedding
 from cs336_basics.tokenizer.tokenizer import Tokenizer
 
 
@@ -93,7 +95,11 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    swiglu = SwiGLU(d_model, d_ff)
+    swiglu.w1.data = w1_weight
+    swiglu.w2.data = w2_weight
+    swiglu.w3.data = w3_weight
+    return swiglu(in_features)
 
 
 def run_scaled_dot_product_attention(
@@ -210,7 +216,8 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    raise NotImplementedError
+    rope = RotaryPositionEmbedding(theta, d_k, max_seq_len)
+    return rope(in_query_or_key, token_positions)
 
 
 def run_transformer_block(
@@ -404,7 +411,7 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
-    raise NotImplementedError
+    return Silu()(in_features)
 
 
 def run_get_batch(
