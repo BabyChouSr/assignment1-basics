@@ -19,7 +19,10 @@ from cs336_basics.layers.activations import Silu, SwiGLU
 from cs336_basics.layers.rotary_embedding import RotaryPositionEmbedding
 from cs336_basics.layers.softmax import softmax
 from cs336_basics.layers.attention import scaled_dot_product_attention, AttentionNoRope, MultiheadSelfAttention
+from cs336_basics.optimizers.loss import cross_entropy
 from cs336_basics.tokenizer.tokenizer import Tokenizer
+from cs336_basics.optimizers.adamw import AdamW
+from cs336_basics.optimizers.lr_scheduler import lr_cosine_schedule, gradient_clipping
 
 
 def run_linear(
@@ -510,7 +513,7 @@ def run_cross_entropy(
     Returns:
         Float[Tensor, ""]: The average cross-entropy loss across examples.
     """
-    raise NotImplementedError
+    return cross_entropy(inputs, targets)
 
 
 def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
@@ -522,14 +525,14 @@ def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm:
 
     The gradients of the parameters (parameter.grad) should be modified in-place.
     """
-    raise NotImplementedError
+    return gradient_clipping(parameters, max_l2_norm)
 
 
 def get_adamw_cls() -> type[torch.optim.Optimizer]:
     """
     Returns a torch.optim.Optimizer that implements AdamW.
     """
-    raise NotImplementedError
+    return AdamW
 
 
 def run_get_lr_cosine_schedule(
@@ -557,7 +560,7 @@ def run_get_lr_cosine_schedule(
     Returns:
         Learning rate at the given iteration under the specified schedule.
     """
-    raise NotImplementedError
+    return lr_cosine_schedule(it, max_learning_rate, min_learning_rate, warmup_iters, cosine_cycle_iters)
 
 
 def run_save_checkpoint(
