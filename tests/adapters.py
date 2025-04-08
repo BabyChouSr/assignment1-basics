@@ -12,6 +12,7 @@ from torch import Tensor
 from cs336_basics.tokenizer.train import train_bpe
 from cs336_basics.layers.block import Block
 from cs336_basics.layers.linear import Linear
+from cs336_basics.layers.model import Model
 from cs336_basics.layers.embedding import Embedding
 from cs336_basics.layers.layernorm import RMSNorm
 from cs336_basics.layers.activations import Silu, SwiGLU
@@ -306,8 +307,6 @@ def run_transformer_block(
     block = Block(d_model, num_heads, d_ff, theta, max_seq_len)
 
     given_keys_to_desired_keys = {
-        "ln2.weight": "ln2.gain",
-        "ln1.weight": "ln1.gain",
         "attn.output_proj.weight": "attn.o_proj.weight"
     }
     desired_weights = {}
@@ -400,7 +399,22 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    model = Model(d_model, num_heads, d_ff, rope_theta, vocab_size, context_length, num_layers)
+    given_keys_to_desired_keys = {
+        "attn.output_proj.weight": "attn.o_proj.weight"
+    }
+    desired_weights = {}
+    for k, v in weights.items():
+        new_key = k
+        for k_subpart_to_replace, k_subpart_to_replace_with in given_keys_to_desired_keys.items():
+            if k_subpart_to_replace in k:
+                new_key = k.replace(k_subpart_to_replace, k_subpart_to_replace_with)
+
+        desired_weights[new_key] = v
+        
+
+    model.load_state_dict(desired_weights)
+    return model(in_indices)
 
 
 def run_rmsnorm(
