@@ -7,9 +7,9 @@ class Linear(nn.Module):
 
         std = (2 / (in_features + out_features)) ** 0.5
         weight_init = nn.init.trunc_normal_(torch.randn(in_features, out_features) * std, a = -3 * std, b = 3 * std)
-        self.W = nn.Parameter(weight_init).to(device=device, dtype=dtype)
+        self.weight = nn.Parameter(weight_init).to(device=device, dtype=dtype)
 
     def forward(self, x: torch.Tensor):
         # o, i is output, input shape since we store W_transpose
-        x = torch.einsum("b s i, o i -> b s o", x, self.W)
+        x = torch.einsum("b s i, o i -> b s o", x, self.weight)
         return x
