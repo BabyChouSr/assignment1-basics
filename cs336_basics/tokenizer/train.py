@@ -84,20 +84,31 @@ def lookup_pair_counts_and_locations(
     return pair_counts, pair_locations
 
 def build_subword_freq_table(
-    documents: list[str],
+    start_end_pair: tuple[int, int],
+    input_path: str,
+    special_tokens_pattern
 ):
+    start, end = start_end_pair
     subword_freqs = {}
-    for document in documents:
-        # Special token used for delimiting endoftext should be removed
-        document = document.replace("<|endoftext|>", "")
-        subword_iter = re.finditer(PAT, document)
-        for subword_match in subword_iter:
-            subword_str = subword_match.group()
-            # subword = [char_to_bytes(c) for c in subword_str]
-            subword = str_to_byte_list(subword_str)
-            subword_byte_tuple = tuple(subword)
-            subword_freqs[subword_byte_tuple] = subword_freqs.get(subword_byte_tuple, 0) + 1
-    
+
+    bytes_to_read = end - start
+    with open(input_path, "rb") as f:
+        while bytes_to_read > 0:
+            # read_size = min(chunk_size, bytes_to_read)
+            # TODO(chris): fix this to take all chunks with special token delimited
+            read_size = bytes_to_read
+            text = f.read(read_size).decode("utf-8", errors="ignore")
+            chunks = re.split(special_tokens_pattern, text)
+            for chunk in chunks:
+                subword_iter = re.finditer(PAT, chunk)
+                for subword_match in subword_iter:
+                    subword_str = subword_match.group()
+                    # subword = [char_to_bytes(c) for c in subword_str]
+                    subword = str_to_byte_list(subword_str)
+                    subword_byte_tuple = tuple(subword)
+                    subword_freqs[subword_byte_tuple] = subword_freqs.get(subword_byte_tuple, 0) + 1
+            bytes_to_read -= len(text)
+
     return subword_freqs
 
 
@@ -128,27 +139,35 @@ def train_bpe(
 
     # Memory optimization by doing streaming
     with open(input_path, 'r') as f:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
-            # Process file in chunks
-            while True:
-                # Read a chunk of lines
-                lines_chunk = list(itertools.islice(f, chunksize))
-                if not lines_chunk:
-                    break
-                    
-                # Divide chunk into smaller batches for workers
-                batch_size = max(1, len(lines_chunk) // num_workers)
-                batches = [lines_chunk[i:i+batch_size] for i in range(0, len(lines_chunk), batch_size)]
-                
-                # Process batches in parallel
-                results = executor.map(build_subword_freq_table, batches)
-                
-                # Combine results
-                for local_subword_freqs in results:
-                    for word, freq in local_subword_freqs.items():
-                        subword_freqs[word] += freq
-                        subwords.add(word)
+        boundaries = find_chunk_boundaries(f, num_workers, "<|endoftext|>".encode("utf-8"))
+        start_end_pairs = list(zip(boundaries[:-1], boundaries[1:]))
 
+    pattern =  '|'.join(re.escape(token) for token in special_tokens)
+    special_tokens_pattern = re.compile(pattern)
+    with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
+        # Process file in chunks
+        # while True:
+        #     # Read a chunk of lines
+        #     lines_chunk = list(itertools.islice(f, chunksize))
+        #     if not lines_chunk:
+        #         break
+                
+        #     # Divide chunk into smaller batches for workers
+        #     batch_size = max(1, len(lines_chunk) // num_workers)
+        #     batches = [lines_chunk[i:i+batch_size] for i in range(0, len(lines_chunk), batch_size)]
+            
+        
+        # Process batches in parallel
+        build_subword_freq_table_batch = partial(build_subword_freq_table, input_path=input_path, special_tokens_pattern=special_tokens_pattern)
+        results = executor.map(build_subword_freq_table_batch, start_end_pairs)
+        
+        # Combine results
+        for local_subword_freqs in results:
+            for word, freq in local_subword_freqs.items():
+                subword_freqs[word] += freq
+                subwords.add(word)
+
+    # breakpoint()
     # with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
     #     results = executor.map(build_subword_freq_table, batches)
 
@@ -204,7 +223,7 @@ def train_bpe(
     # sorted_pairs = sorted(pair_counts.items(), key=lambda x: x[1], reverse=True)
     # print("Pairs sorted by frequency (highest to lowest):")
     # for pair, count in sorted_pairs:
-    #     print(f"Pair: {positive_bytes(negative_ord_tuple(pair))}, Count: {count}")
+    #     print(f"Pair: {pair}, Count: {count}")
 
     # pair_pq = [(-counts, negative_ord_tuple(pair)) for pair, counts in pair_counts.items()]
     # heapq.heapify(pair_pq)
