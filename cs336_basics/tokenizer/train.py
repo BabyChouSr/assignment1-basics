@@ -90,25 +90,62 @@ def build_subword_freq_table(
 ):
     start, end = start_end_pair
     subword_freqs = {}
-
-    bytes_to_read = end - start
+    endoftext_token = b"<|endoftext|>"
+    token_length = len(endoftext_token)
+    buffer_size = 4096  # Read size in bytes
+    
     with open(input_path, "rb") as f:
-        while bytes_to_read > 0:
-            # read_size = min(chunk_size, bytes_to_read)
-            # TODO(chris): fix this to take all chunks with special token delimited
-            read_size = bytes_to_read
-            text = f.read(read_size).decode("utf-8", errors="ignore")
-            chunks = re.split(special_tokens_pattern, text)
-            for chunk in chunks:
-                subword_iter = re.finditer(PAT, chunk)
-                for subword_match in subword_iter:
-                    subword_str = subword_match.group()
-                    # subword = [char_to_bytes(c) for c in subword_str]
-                    subword = str_to_byte_list(subword_str)
-                    subword_byte_tuple = tuple(subword)
-                    subword_freqs[subword_byte_tuple] = subword_freqs.get(subword_byte_tuple, 0) + 1
-            bytes_to_read -= len(text)
-
+        f.seek(start)
+        current_position = start
+        
+        # Keep reading until we reach the end position
+        while current_position < end:
+            # Read a document up to the next <|endoftext|> token
+            document = b""
+            token_found = False
+            
+            while not token_found and current_position < end:
+                # Determine how much to read
+                remaining = min(buffer_size, end - current_position)
+                if remaining <= 0:
+                    break
+                    
+                # Read a chunk
+                chunk = f.read(remaining)
+                if not chunk:  # End of file
+                    break
+                    
+                # Look for the endoftext token
+                token_pos = chunk.find(endoftext_token)
+                
+                if token_pos != -1:
+                    # Found token in this chunk
+                    document += chunk[:token_pos]  # Add text up to token
+                    token_found = True
+                    
+                    # Update position to after the token
+                    current_position += token_pos + token_length
+                    f.seek(current_position)
+                else:
+                    # No token in this chunk, keep looking
+                    document += chunk
+                    current_position += len(chunk)
+            
+            # Process the document if we have content
+            if document:
+                try:
+                    text = document.decode("utf-8", errors="ignore")
+                    chunks = re.split(special_tokens_pattern, text)
+                    for chunk in chunks:
+                        subword_iter = re.finditer(PAT, chunk)
+                        for subword_match in subword_iter:
+                            subword_str = subword_match.group()
+                            subword = str_to_byte_list(subword_str)
+                            subword_byte_tuple = tuple(subword)
+                            subword_freqs[subword_byte_tuple] = subword_freqs.get(subword_byte_tuple, 0) + 1
+                except Exception as e:
+                    print(f"Error processing document: {e}")
+    
     return subword_freqs
 
 
@@ -138,7 +175,7 @@ def train_bpe(
     subwords = set()
 
     # Memory optimization by doing streaming
-    with open(input_path, 'r') as f:
+    with open(input_path, 'rb') as f:
         boundaries = find_chunk_boundaries(f, num_workers, "<|endoftext|>".encode("utf-8"))
         start_end_pairs = list(zip(boundaries[:-1], boundaries[1:]))
 

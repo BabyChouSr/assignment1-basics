@@ -6,8 +6,8 @@ class Linear(nn.Module):
         super().__init__()
 
         std = (2 / (in_features + out_features)) ** 0.5
-        weight_init = nn.init.trunc_normal_(torch.randn(in_features, out_features) * std, a = -3 * std, b = 3 * std)
-        self.weight = nn.Parameter(weight_init).to(device=device, dtype=dtype)
+        weight_init = nn.init.trunc_normal_(torch.randn(in_features, out_features) * std, a = -3 * std, b = 3 * std).to(device=device, dtype=dtype)
+        self.weight = nn.Parameter(weight_init)
 
     def forward(self, x: torch.Tensor):
         # o, i is output, input shape since we store W_transpose

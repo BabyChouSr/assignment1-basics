@@ -9,6 +9,14 @@ def lr_cosine_schedule(t, max_lr, min_lr, warmup_steps, total_steps):
     else:
         return min_lr
     
+def lr_scheduler_step(optimizer, scheduler, t, max_lr, min_lr, warmup_steps, total_steps):
+    if scheduler == "cosine":
+        lr_scheduler_step_func = lr_cosine_schedule
+
+    for g in optimizer.param_groups:
+        g['lr'] = lr_scheduler_step_func(t, max_lr, min_lr, warmup_steps, total_steps)
+
+
 def gradient_clipping(parameters, max_l2_norm):
     eps = 1e-6
     total_norm = 0.0

@@ -55,10 +55,10 @@ class MultiheadSelfAttention(nn.Module):
         key_dimension = int(self.d_k * num_heads)
         value_dimension = int(self.d_v * num_heads)
 
-        self.q_proj = Linear(key_dimension, d_model)
-        self.k_proj = Linear(key_dimension, d_model)
-        self.v_proj = Linear(value_dimension, d_model)
-        self.o_proj = Linear(d_model, value_dimension)
+        self.q_proj = Linear(key_dimension, d_model, device, dtype)
+        self.k_proj = Linear(key_dimension, d_model, device, dtype)
+        self.v_proj = Linear(value_dimension, d_model, device, dtype)
+        self.o_proj = Linear(d_model, value_dimension, device, dtype)
 
         self.rope = RotaryPositionEmbedding(theta, self.d_k, max_seq_len)
 

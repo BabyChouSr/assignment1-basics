@@ -10,10 +10,10 @@ class Model(nn.Module):
     def __init__(self, d_model, num_heads, d_ff, theta, vocab_size, context_length, num_layers, device=None, dtype=None):
         super().__init__()
 
-        self.token_embeddings = Embedding(vocab_size, d_model)
-        self.layers = nn.ModuleList([Block(d_model, num_heads, d_ff, theta, context_length, device, dtype) for _ in range(num_layers)])
-        self.ln_final = RMSNorm(d_model)
-        self.lm_head = Linear(vocab_size, d_model)
+        self.token_embeddings = Embedding(vocab_size, d_model, device=device, dtype=dtype)
+        self.layers = nn.ModuleList([Block(d_model, num_heads, d_ff, theta, context_length, device=device, dtype=dtype) for _ in range(num_layers)])
+        self.ln_final = RMSNorm(d_model, device=device, dtype=dtype)
+        self.lm_head = Linear(vocab_size, d_model, device=device, dtype=dtype)
 
     def forward(self, x: torch.Tensor):
         x = self.token_embeddings(x)

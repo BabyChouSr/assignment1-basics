@@ -7,7 +7,7 @@ class RMSNorm(nn.Module):
         super().__init__()
         self.d_model = d_model
         self.eps = eps
-        self.weight = nn.Parameter(torch.ones(d_model)).to(device, dtype)
+        self.weight = nn.Parameter(torch.ones(d_model).to(device, dtype))
 
     def forward(self, x: torch.Tensor):
         in_dtype = x.dtype

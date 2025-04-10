@@ -9,10 +9,10 @@ class Block(nn.Module):
     def __init__(self, d_model, num_heads, d_ff, theta, max_seq_len, device=None, dtype=None):
         super().__init__()
 
-        self.attn = MultiheadSelfAttention(d_model, num_heads, max_seq_len, theta, device, dtype)
-        self.ffn = SwiGLU(d_model, d_ff, device, dtype)
-        self.ln1 = RMSNorm(d_model)
-        self.ln2 = RMSNorm(d_model)
+        self.attn = MultiheadSelfAttention(d_model, num_heads, max_seq_len, theta, device=device, dtype=dtype)
+        self.ffn = SwiGLU(d_model, d_ff, device=device, dtype=dtype)
+        self.ln1 = RMSNorm(d_model, device=device, dtype=dtype)
+        self.ln2 = RMSNorm(d_model, device=device, dtype=dtype)
 
     def forward(self, x: torch.Tensor):
         b, s, d = x.shape

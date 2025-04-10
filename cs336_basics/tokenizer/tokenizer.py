@@ -9,6 +9,7 @@ class Tokenizer:
         self.merges = merges
         self.special_tokens = special_tokens or []
         self.subword_to_id: dict[bytes, int] = {v: k for k, v in self.vocab.items()}
+        self.merge_rank = {self.merges[i]: i for i in range(len(self.merges))}
         # self.merge_set = set(self.merges)
 
         if self.special_tokens:
@@ -49,6 +50,69 @@ class Tokenizer:
             merges=merges,
             special_tokens=special_tokens,
         )
+    
+    def _apply_merges_to_token_fast(self, token_str: str) -> list[bytes]:
+        """
+        Efficiently apply BPE merges to a single pre-token (string) using a greedy
+        algorithm that updates a dictionary of eligible pairs.
+        Returns the final list of tokens (as bytes).
+        """
+        # Represent the token as a list of one-byte tokens.
+        word = [bytes([b]) for b in token_str.encode("utf-8")]
+        if len(word) == 0:
+            return word
+
+        # Build initial mapping: for each index i in word,
+        # if the pair (word[i], word[i+1]) is mergeable (i.e., present in merge_rank),
+        # record it in the dict 'pairs' with key = i and value = rank.
+        pairs = {}
+        for i in range(len(word) - 1):
+            pair = (word[i], word[i + 1])
+            if pair in self.merge_rank:
+                pairs[i] = self.merge_rank[pair]
+
+        # Now, repeatedly merge the eligible pair with the lowest rank.
+        while pairs:
+            # Get the index with the minimum rank.
+            i = min(pairs, key=lambda k: pairs[k])
+            # Verify that the pair is still valid (could have been affected by previous merges)
+            current_pair = (word[i], word[i + 1])
+            if current_pair not in self.merge_rank:
+                del pairs[i]
+                continue
+
+            # Merge the pair at index i.
+            new_token = word[i] + word[i + 1]
+            word[i] = new_token
+            del word[i + 1]
+
+            # Remove outdated pairs: the pair starting at i-1 (if exists) and at i.
+            for j in [i - 1, i]:
+                if j in pairs:
+                    del pairs[j]
+
+            # Update pair at position i-1 if applicable.
+            if i - 1 >= 0 and i < len(word):
+                pair = (word[i - 1], word[i])
+                if pair in self.merge_rank:
+                    pairs[i - 1] = self.merge_rank[pair]
+
+            # Update pair at position i (new adjacent pair) if applicable.
+            if i < len(word) - 1:
+                pair = (word[i], word[i + 1])
+                if pair in self.merge_rank:
+                    pairs[i] = self.merge_rank[pair]
+
+            # Because the word list shortened by one element, shift keys in pairs dict that occur after i.
+            new_pairs = {}
+            for pos, rank in pairs.items():
+                if pos > i:
+                    new_pairs[pos - 1] = rank
+                else:
+                    new_pairs[pos] = rank
+            pairs = new_pairs
+
+        return word
 
     def _encode_chunk(self, text: str) -> list[int]:
         chunks = []
@@ -69,27 +133,31 @@ class Tokenizer:
                     subword_str = subword_match.group()
                     subword = str_to_byte_list(subword_str)
 
-                    while True:
-                        merge_found = False
-                        # Need to apply merges in the order that we see the merges. Can't just pick a random applicable merge
-                        for first, second in self.merges:
-                            for pos in range(len(subword) - 1):
-                                if pos + 1 >= len(subword):
-                                    break
+                    # while True:
+                    #     merge_found = False
+                    #     # Need to apply merges in the order that we see the merges. Can't just pick a random applicable merge
+                    #     for first, second in self.merges:
+                    #         pos = 0
+                    #         while pos < len(subword) - 1:
+                    #             if pos + 1 >= len(subword):
+                    #                 break
 
-                                pretoken_first, pretoken_second = subword[pos], subword[pos + 1]
-                                if pretoken_first == first and pretoken_second == second:
-                                    merge_found = True
-                                    # Merge the tokens
-                                    subword[pos] = first + second
+                    #             pretoken_first, pretoken_second = subword[pos], subword[pos + 1]
+                    #             if pretoken_first == first and pretoken_second == second:
+                    #                 merge_found = True
+                    #                 # Merge the tokens
+                    #                 subword[pos] = first + second
 
-                                    # Pop the next token post merge
-                                    subword.pop(pos + 1)
+                    #                 # Pop the next token post merge
+                    #                 subword.pop(pos + 1)
+                    #             else:
+                    #                 pos += 1
 
-                        if not merge_found:
-                            break
+                    #     if not merge_found:
+                    #         break
+                    merged_word = self._apply_merges_to_token_fast(subword_str)
                     
-                    for subword_bytes in subword:
+                    for subword_bytes in merged_word:
                         # breakpoint()
                         tokens.append(self.subword_to_id[subword_bytes])
 
@@ -99,8 +167,20 @@ class Tokenizer:
         return self._encode_chunk(text)
                     
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
+        document = ""
+        eot_token_len = len("<|endoftext|>")
         for text in iterable:
-            for token in self.encode(text):
+            if "<|endoftext|>" in text:
+                eot_token_idx = text.find("<|endoftext|>")
+                document += text[:eot_token_idx + eot_token_len]
+                for token in self.encode(document):
+                    yield token
+                document = text[eot_token_idx + eot_token_len:]
+            else:
+                document += text
+        
+        if len(document) > 0:
+            for token in self.encode(document):
                 yield token
 
     def decode(self, ids: list[int]) -> str:
