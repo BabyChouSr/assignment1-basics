@@ -1,0 +1,40 @@
+concurrent.futures.process._RemoteTraceback: 
+"""
+Traceback (most recent call last):
+  File "/scratch/c-cychou/.local/share/uv/python/cpython-3.13.3-linux-x86_64-gnu/lib/python3.13/concurrent/futures/process.py", line 254, in _process_worker
+    r = call_item.fn(*call_item.args, **call_item.kwargs)
+  File "/scratch/c-cychou/.local/share/uv/python/cpython-3.13.3-linux-x86_64-gnu/lib/python3.13/concurrent/futures/process.py", line 203, in _process_chunk
+    return [fn(*args) for args in chunk]
+            ~~^^^^^^^
+  File "/home/c-cychou/assignment1-basics/cs336_basics/tokenizer/tokenize_datasets.py", line 14, in encode_and_write_chunk
+    tokenizer = Tokenizer.from_files(vocab_path, merges_path, special_tokens)
+  File "/home/c-cychou/assignment1-basics/cs336_basics/tokenizer/tokenizer.py", line 28, in from_files
+    with open(vocab_filepath, "r") as f_vocab:
+         ~~~~^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'results/TinyStoriesV2-GPT4-train-vocab.json'
+"""
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/c-cychou/assignment1-basics/cs336_basics/tokenizer/tokenize_datasets.py", line 103, in <module>
+    main(args)
+    ~~~~^^^^^^
+  File "/home/c-cychou/assignment1-basics/cs336_basics/tokenizer/tokenize_datasets.py", line 89, in main
+    for tokenized_array in results:
+                           ^^^^^^^
+  File "/scratch/c-cychou/.local/share/uv/python/cpython-3.13.3-linux-x86_64-gnu/lib/python3.13/concurrent/futures/process.py", line 617, in _chain_from_iterable_of_lists
+    for element in iterable:
+                   ^^^^^^^^
+  File "/scratch/c-cychou/.local/share/uv/python/cpython-3.13.3-linux-x86_64-gnu/lib/python3.13/concurrent/futures/_base.py", line 619, in result_iterator
+    yield _result_or_cancel(fs.pop())
+          ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/scratch/c-cychou/.local/share/uv/python/cpython-3.13.3-linux-x86_64-gnu/lib/python3.13/concurrent/futures/_base.py", line 317, in _result_or_cancel
+    return fut.result(timeout)
+           ~~~~~~~~~~^^^^^^^^^
+  File "/scratch/c-cychou/.local/share/uv/python/cpython-3.13.3-linux-x86_64-gnu/lib/python3.13/concurrent/futures/_base.py", line 456, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/scratch/c-cychou/.local/share/uv/python/cpython-3.13.3-linux-x86_64-gnu/lib/python3.13/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+FileNotFoundError: [Errno 2] No such file or directory: 'results/TinyStoriesV2-GPT4-train-vocab.json'
