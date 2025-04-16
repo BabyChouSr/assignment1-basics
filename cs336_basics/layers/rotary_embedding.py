@@ -7,9 +7,9 @@ class RotaryPositionEmbedding(nn.Module):
         
         self.d_k = d_k
 
-        k = torch.arange(0, d_k // 2)
+        k = torch.arange(0, d_k // 2, device=device)
         inv_freqs = 1 / theta ** (2 * k / d_k)
-        positions = torch.arange(0, max_seq_len)
+        positions = torch.arange(0, max_seq_len, device=device)
         freqs = torch.einsum("i,j->ij", positions, inv_freqs)
 
         # s, d //2

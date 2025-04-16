@@ -1,0 +1,1 @@
+/home/c-cychou/assignment1-basics/cs336_basics/scripts/slurm_outputs/570_submission.sh

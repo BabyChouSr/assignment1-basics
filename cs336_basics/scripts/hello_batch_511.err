@@ -1,4 +1,0 @@
-  File "/home/c-cychou/assignment1-basics/cs336_basics/scripts/hello_batch.py", line 1
-    cat hello_batch.py  
-        ^^^^^^^^^^^
-SyntaxError: invalid syntax

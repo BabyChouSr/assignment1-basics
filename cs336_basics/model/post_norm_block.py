@@ -17,9 +17,9 @@ class Block(nn.Module):
     def forward(self, x: torch.Tensor):
         b, s, d = x.shape
 
-        token_positions = torch.arange(0, s, device=x.device, dtype=torch.long)
-        x = x + self.attn(self.ln1(x), token_positions)
-        x = x + self.ffn(self.ln2(x))
+        token_positions = torch.arange(0, s, device=x.device)
+        x = self.ln1(x + self.attn(x, token_positions))
+        x = self.ln2(x + self.ffn(x))
         
         return x
 

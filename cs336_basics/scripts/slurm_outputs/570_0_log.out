@@ -1,0 +1,5 @@
+submitit INFO (2025-04-10 17:12:05,142) - Starting with JobEnvironment(job_id=570, hostname=ad12a3ca-01.cloud.together.ai, local_rank=0(1), node=0(1), global_rank=0(1))
+submitit INFO (2025-04-10 17:12:05,142) - Loading pickle: /home/c-cychou/assignment1-basics/cs336_basics/scripts/slurm_outputs/570_submitted.pkl
+Hello World
+submitit INFO (2025-04-10 17:12:05,143) - Job completed successfully
+submitit INFO (2025-04-10 17:12:05,151) - Exiting after successful completion

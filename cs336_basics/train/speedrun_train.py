@@ -4,13 +4,8 @@ import wandb
 import numpy as np
 import torch
 import time
-import torch.autograd.profiler as profiler
 
-from cs336_basics.layers.model import Model
-from cs336_basics.model.no_rms_model import NoRMSModel
-from cs336_basics.model.post_norm_model import PostNormModel
-from cs336_basics.model.nope_model import NopeModel
-from cs336_basics.model.silu_model import SiluModel
+from cs336_basics.model.speedrun_model import SpeedrunModel
 from cs336_basics.optimizers.adamw import AdamW
 from cs336_basics.train.data_loader import get_batch
 from cs336_basics.train.checkpoint import save_checkpoint, load_checkpoint
@@ -81,7 +76,14 @@ def main(
     wandb_name,
     model_type: str | None = None,
     max_grad_norm: int = 3,
+    use_muon: bool = False,
+    max_muon_lr: float = 0.02,
+    muon_momentum: float = 0.95,
 ):
+
+    device_id = torch.device("cuda", int(os.environ["LOCAL_RANK"]))
+    torch.distributed.init_process_group(backend="nccl", device_id=device_id)
+    torch.distributed.barrier()
     run = wandb.init(
         entity=wandb_entity,
         project=wandb_project,
@@ -91,23 +93,28 @@ def main(
     )
 
     if model_type is None:
-        model_cls = Model
-    elif model_type == "no_layernorm":
-        model_cls = NoRMSModel
-    elif model_type == "post_norm":
-        model_cls = PostNormModel
-    elif model_type == "nope":
-        model_cls = NopeModel
-    elif model_type == "silu":
-        model_cls = SiluModel
+        model_cls = SpeedrunModel
 
     if model_type in ["nope"]:
         model = model_cls(d_model, num_heads, d_ff, vocab_size, context_length, num_layers, device, dtype)
     else:
         model = model_cls(d_model, num_heads, d_ff, rope_theta, vocab_size, context_length, num_layers, device, dtype)
 
-    optimizer = AdamW(model.parameters(), max_lr, (beta1, beta2), adam_eps, weight_decay)
+    if not use_muon:
+        optimizer = AdamW(model.parameters(), max_lr, (beta1, beta2), adam_eps, weight_decay)
+        optimizers = [optimizer]
+        trainable_params = sum([p.numel() for p in model.parameters()])
+    else:
+        from muon import Muon
 
+        muon_params = [p for p in model.layers.parameters() if p.ndim >= 2]
+        adamw_params = ([p for p in model.layers.parameters() if p.ndim < 2]
+              + [*model.token_embeddings.parameters(), *model.lm_head.parameters(), *model.ln_final.parameters()])
+            
+        optimizers = [Muon(muon_params, lr=max_muon_lr, momentum=muon_momentum, rank=0, world_size=1),
+              AdamW(adamw_params, lr=max_lr, betas=(beta1, beta2), weight_decay=weight_decay)] 
+
+        trainable_params = sum([p.numel() for p in muon_params]) + sum([p.numel() for p in adamw_params])
     if os.path.exists(output_path):
         try:
             start_step = load_checkpoint(output_path, model, optimizer)
@@ -118,10 +125,11 @@ def main(
         start_step = 0
 
 
-    print(f"Number of trainable parameters: {sum([p.numel() for p in model.parameters()])}")
+    print(f"Number of trainable parameters: {trainable_params}")
 
     # NOTE(Chris): not working atm because of attention mask or something - fixed use float16 instead of bool
-    model = torch.compile(model)
+    # NOTE(chris): This doesn't work with mixed precision training for some reason
+    # model = torch.compile(model)
 
     train_tokens = np.load(train_path, mmap_mode="r")
     validation_tokens = np.load(validation_path, mmap_mode="r")
@@ -131,17 +139,30 @@ def main(
 
     print(f"Training the model for {num_train_tokens} tokens => {num_train_steps} steps")
 
+    scaler = torch.amp.GradScaler(device)
     for step in range(start_step, num_train_steps):
         # Putting this first because we want to set the lr in each of the optimizer groups corretly.
         # We do step + 1 because we start at t = 1 for AdamW optimizer
-        lr_scheduler_step(optimizer, lr_scheduler_type, step + 1, max_lr, min_lr, lr_warmup_steps, num_train_steps)
+        for optimizer in optimizers:
+            if isinstance(optimizer, AdamW):
+                lr_scheduler_step(optimizer, lr_scheduler_type, step + 1, max_lr, min_lr, lr_warmup_steps, num_train_steps)
+            elif isinstance(optimizer, Muon):
+                lr_scheduler_step(optimizer, lr_scheduler_type, step + 1, max_muon_lr, max_muon_lr * 0.10, lr_warmup_steps, num_train_steps)
 
         x, y = get_batch(train_tokens, batch_size, context_length, device)
-        optimizer.zero_grad()
-        loss = cross_entropy(model(x), y)
-        loss.backward()
-        grad_norm = gradient_clipping(model.parameters(), max_grad_norm)
-        optimizer.step()
+
+        for optimizer in optimizers:
+            optimizer.zero_grad()
+        with torch.amp.autocast(device, dtype=torch.bfloat16):
+            loss = cross_entropy(model(x), y)
+        scaler.scale(loss).backward()
+        
+        for optimizer in optimizers:
+            scaler.unscale_(optimizer)
+            grad_norm = gradient_clipping(model.parameters(), max_grad_norm)
+            scaler.step(optimizer)
+
+        scaler.update()
 
         run.log({"train/loss": loss, "train/learning_rate": lr_cosine_schedule(step + 1, max_lr, min_lr, lr_warmup_steps, num_train_steps), "train/grad": grad_norm, "train/seconds": time.time() - start_time})
 
@@ -189,6 +210,11 @@ if __name__ == "__main__":
     parser.add_argument("--wandb-project", type=str, default="cs336-project1")
     parser.add_argument("--wandb-name", type=str, default="")
     parser.add_argument("--output-path", type=str)
+    parser.add_argument("--model-type", type=str, default=None)
+    parser.add_argument("--max-grad-norm", type=float, default=3)
+    parser.add_argument("--use-muon", type=bool, default=False)
+    parser.add_argument("--max-muon-lr", type=float, default=0.002)
+    parser.add_argument("--muon-momentum", type=float, default=0.95)
 
     args = parser.parse_args()
 
@@ -220,4 +246,9 @@ if __name__ == "__main__":
         wandb_project=args.wandb_project,
         wandb_entity=args.wandb_entity,
         wandb_name=args.wandb_name,
+        model_type=args.model_type,
+        max_grad_norm=args.max_grad_norm,
+        use_muon=args.use_muon,
+        max_muon_lr=args.max_muon_lr,
+        muon_momentum=args.muon_momentum,
     )

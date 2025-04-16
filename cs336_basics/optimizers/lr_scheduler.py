@@ -32,4 +32,8 @@ def gradient_clipping(parameters, max_l2_norm):
         for p in parameters:
             if p.grad is not None:
                 p.grad.data.mul_(clip_coef)
+        
+        return max_l2_norm
+    else:
+        return total_norm
 

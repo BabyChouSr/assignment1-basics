@@ -169,3 +169,5 @@ data/*
 results/*
 tokenized/*
 wandb/*
+slurm_outputs/*
+models/*

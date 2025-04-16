@@ -47,7 +47,7 @@ def run_linear(
     """
 
     linear = Linear(d_in, d_out)
-    linear.W.data = weights
+    linear.weight.data = weights
     return linear(in_features)
 
 
@@ -71,7 +71,7 @@ def run_embedding(
     """
 
     embedding = Embedding(vocab_size, d_model)
-    embedding.embeddings.data = weights
+    embedding.weight.data = weights
     return embedding(token_ids)
 
 
@@ -443,7 +443,7 @@ def run_rmsnorm(
         RMSNorm of the `in_features`.
     """
     rmsnorm = RMSNorm(d_model, eps)
-    rmsnorm.gain.data = weights
+    rmsnorm.weight.data = weights
     return rmsnorm(in_features)
 
 

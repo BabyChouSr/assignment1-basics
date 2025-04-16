@@ -1,4 +1,3 @@
-
 import einops
 import torch
 import torch.nn as nn
@@ -9,7 +8,7 @@ from cs336_basics.layers.softmax import softmax
 def scaled_dot_product_attention(q, k, v, attention_mask):
     d_k = q.shape[-1]
     scores = torch.einsum("b ... s d, b ... t d->b ... s t", q, k) / (d_k ** 0.5)
-    scores = scores.masked_fill(attention_mask == False, float('-inf'))
+    scores = scores.masked_fill(attention_mask == 0, float('-inf'))
     probabilities = softmax(scores, i=-1)
     values = torch.einsum("b ... t s, b ... s d-> b ... t d", probabilities, v)
     return values
@@ -23,10 +22,10 @@ class AttentionNoRope(nn.Module):
         key_dimension = int(self.d_k * num_heads)
         value_dimension = int(self.d_v * num_heads)
 
-        self.q_proj = Linear(key_dimension, d_model)
-        self.k_proj = Linear(key_dimension, d_model)
-        self.v_proj = Linear(value_dimension, d_model)
-        self.o_proj = Linear(d_model, value_dimension)
+        self.q_proj = Linear(key_dimension, d_model, device, dtype)
+        self.k_proj = Linear(key_dimension, d_model, device, dtype)
+        self.v_proj = Linear(value_dimension, d_model, device, dtype)
+        self.o_proj = Linear(d_model, value_dimension, device, dtype)
 
     def forward(self, x: torch.Tensor):
         # ... s, d_in
@@ -39,7 +38,7 @@ class AttentionNoRope(nn.Module):
         v = einops.rearrange(v, "... s (h d) -> ... h s d", h=self.num_heads)
 
         # Create causal attention mask where each token can only attend to itself and previous tokens
-        mask = torch.tril(torch.ones(seq_len, seq_len, device=x.device, dtype=torch.bool))
+        mask = torch.tril(torch.ones(seq_len, seq_len, device=x.device, dtype=torch.float))
 
         values = scaled_dot_product_attention(q, k, v, mask)
         values = einops.rearrange(values, "... h s d -> ... s (h d)", h=self.num_heads)
@@ -60,7 +59,7 @@ class MultiheadSelfAttention(nn.Module):
         self.v_proj = Linear(value_dimension, d_model, device, dtype)
         self.o_proj = Linear(d_model, value_dimension, device, dtype)
 
-        self.rope = RotaryPositionEmbedding(theta, self.d_k, max_seq_len)
+        self.rope = RotaryPositionEmbedding(theta, self.d_k, max_seq_len, device=device)
 
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor):
         # ... s, d_in
@@ -75,7 +74,7 @@ class MultiheadSelfAttention(nn.Module):
         v = einops.rearrange(v, "... s (h d) -> ... h s d", h=self.num_heads)
 
         # Create causal attention mask where each token can only attend to itself and previous tokens
-        mask = torch.tril(torch.ones(seq_len, seq_len, device=x.device, dtype=torch.bool))
+        mask = torch.tril(torch.ones(seq_len, seq_len, device=x.device, dtype=torch.float))
 
         values = scaled_dot_product_attention(q, k, v, mask)
         values = einops.rearrange(values, "... h s d -> ... s (h d)", h=self.num_heads)
