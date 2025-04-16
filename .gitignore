@@ -171,3 +171,5 @@ tokenized/*
 wandb/*
 slurm_outputs/*
 models/*
+
+*.zip
